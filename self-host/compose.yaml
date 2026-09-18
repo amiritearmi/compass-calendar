@@ -25,6 +25,12 @@ services:
 
   backend:
     image: switchbacktech/compass-backend:${COMPASS_VERSION:-latest}
+    # Uncomment to build from source (needed for CALDAV_ORIGIN below to take
+    # effect — the published image predates that patch). Requires the full
+    # repo alongside this compose.yaml, same as the web build block above.
+    # build:
+    #   context: ..
+    #   dockerfile: self-host/Dockerfile.backend
     # No depends_on mongo here: mongo is gated behind the `selfhosted` profile,
     # and cloud/Atlas deploys run without a local mongo service. A hard
     # dependency in this base file makes those projects invalid ("depends on
@@ -39,6 +45,11 @@ services:
       # them with `LOG_LEVEL=debug docker compose up -d backend`. A logLevel in
       # compass.yaml takes precedence over this default.
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Points the "Apple Calendar" connect flow at any CalDAV server instead
+      # of iCloud (e.g. a self-hosted Radicale/Nextcloud/Baikal instance) —
+      # see packages/sync/src/providers/apple/caldav-client.ts. Empty/unset
+      # falls through to the iCloud default, so this is a no-op unless set.
+      CALDAV_ORIGIN: ${CALDAV_ORIGIN:-}
     ports:
       - *backend-port
     read_only: true
@@ -61,6 +72,12 @@ services:
 
   sync:
     image: switchbacktech/compass-sync:${COMPASS_VERSION:-latest}
+    # Uncomment to build from source — the Apple/CalDAV provider code
+    # (caldav-client.ts) actually lives in this service, not backend, so
+    # CALDAV_ORIGIN below needs this rebuilt too, not just backend.
+    # build:
+    #   context: ..
+    #   dockerfile: self-host/Dockerfile.sync
     # Gated behind the `sync` profile: the deploy enables it only where an
     # isolated sync database is provisioned, so environments without one never
     # start a crash-looping container. Where enabled, Sync stays passive
@@ -76,6 +93,7 @@ services:
     environment:
       COMPASS_CONFIG_FILE: /app/compass.yaml
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      CALDAV_ORIGIN: ${CALDAV_ORIGIN:-}
     read_only: true
     tmpfs:
       - /tmp
@@ -120,7 +138,13 @@ services:
       start_period: 60s
 
   supertokens:
-    image: supertokens/supertokens-postgresql:11.0.2
+    # Bumped from 11.0.2 (upstream's pin): main's supertokens-node SDK
+    # (24.0.3 at time of writing) rejects 11.0.2's core as an incompatible
+    # version ("The running SuperTokens core version is not compatible with
+    # this NodeJS SDK") — every signup attempt 500'd until this moved to a
+    # core the SDK actually accepts. Pinned to an exact version rather than
+    # `:latest` so this doesn't silently drift on a future pull.
+    image: supertokens/supertokens-postgresql:12.2.0
     profiles: [selfhosted]
     depends_on:
       supertokens-db:
