@@ -179,6 +179,25 @@ export function replaceGridDraftSchedule(
   return { ...draft, values: { ...draft.values, schedule } };
 }
 
+/**
+ * Sibling to `replaceGridDraftSchedule` for a pointer drag that drops an
+ * event on a different calendar's column (Day view multi-calendar). Same
+ * kind-branching reason: an edit draft's `calendarId` is non-nullable
+ * (`EditEventFormValues`), a create draft's is nullable
+ * (`NewEventFormValues`) — spreading without branching would let either
+ * shape silently take the other's nullability.
+ */
+export function replaceGridDraftCalendar(
+  draft: GridEventDraft,
+  calendarId: CalendarId,
+): GridEventDraft {
+  if (draft.kind === "create") {
+    return { ...draft, values: { ...draft.values, calendarId } };
+  }
+
+  return { ...draft, values: { ...draft.values, calendarId } };
+}
+
 export function parseGridEventDraft(
   draft: GridEventDraft,
 ): ParseEventDraftResult {

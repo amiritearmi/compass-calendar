@@ -19,6 +19,7 @@ import {
   resolveGridEventCardChrome,
   resolvePlaceholderCardChrome,
 } from "@web/grid/grid-event-card-chrome";
+import { useGridEventPointerDrag } from "@web/grid/interaction/pointer-drag/use-grid-event-pointer-drag";
 import { createTimedEventLayout } from "@web/grid/layout/timed-deck.layout";
 import { useGridEventDraftHandlers } from "@web/views/Week/components/Grid/useGridEventDraftHandlers";
 import { type Measurements_Grid } from "@web/views/Week/hooks/grid/useGridLayout";
@@ -32,6 +33,7 @@ interface Props {
 }
 
 export const MainGridEvents = ({ measurements, weekProps }: Props) => {
+  useGridEventPointerDrag({ view: "week" });
   const draftOverlay = useGridDraftOverlay();
   const {
     events: weekEvents,

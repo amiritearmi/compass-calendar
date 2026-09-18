@@ -13,7 +13,13 @@ export type Activity_DraftEvent =
    * Shift+Arrow place-create: timed draft on the grid with the form closed so
    * the user can keep repositioning before opening details with Enter.
    */
-  | "keyboardPlace";
+  | "keyboardPlace"
+  /**
+   * Pointer-dragging an existing event to move or resize it. Form-closed
+   * (see `useGridEventPointerDrag`) until the drag ends, same shape as
+   * `keyboardPlace`.
+   */
+  | "pointerDrag";
 
 const OPENS_FORM_ON_START: ReadonlySet<Activity_DraftEvent> = new Set([
   "createShortcut",
