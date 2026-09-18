@@ -49,13 +49,18 @@ describe("storage migrations", () => {
       expect(store.putEvents).not.toHaveBeenCalled();
     });
 
-    it("runs the demo-data seed and sets its flag when not previously completed", async () => {
+    // demoDataSeedMigration is deliberately not registered in
+    // externalMigrations (see migrations.ts) — it ran once per browser,
+    // independent of the account, so two browsers on the same self-hosted
+    // account could show different "calendars". This locks in that it stays
+    // off rather than silently creeping back in.
+    it("has no external migrations registered, so nothing runs and no flag is set", async () => {
       const store = createMockOfflineDataStore();
 
       await runExternalMigrations(store);
 
-      expect(store.putEvents).toHaveBeenCalled();
-      expect(localStorage.getItem(DEMO_DATA_SEED_FLAG_KEY)).toBe("completed");
+      expect(store.putEvents).not.toHaveBeenCalled();
+      expect(localStorage.getItem(DEMO_DATA_SEED_FLAG_KEY)).toBe(null);
     });
   });
 
@@ -64,7 +69,7 @@ describe("storage migrations", () => {
       const store = createMockOfflineDataStore();
 
       await expect(runAllMigrations(store)).resolves.toBeUndefined();
-      expect(localStorage.getItem(DEMO_DATA_SEED_FLAG_KEY)).toBe("completed");
+      expect(localStorage.getItem(DEMO_DATA_SEED_FLAG_KEY)).toBe(null);
     });
   });
 });

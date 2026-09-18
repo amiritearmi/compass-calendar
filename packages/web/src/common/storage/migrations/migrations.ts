@@ -1,6 +1,5 @@
 import { persistentBrowserStore } from "@web/common/storage/browser-key-value.store";
 import { type OfflineDataStore } from "../offline-data/offline-data.store";
-import { demoDataSeedMigration } from "./external/demo-data-seed";
 import { type DataMigration, type ExternalMigration } from "./migration.types";
 
 // ─── Migration Registry ──────────────────────────────────────────────────────
@@ -15,8 +14,19 @@ export const dataMigrations: DataMigration[] = [];
 /**
  * External migrations import data from outside storage.
  * Tracked via localStorage flags.
+ *
+ * demoDataSeedMigration (onboarding sample events — "Deep work day", "Focus
+ * block", etc.) is deliberately left out here: it runs once per BROWSER
+ * (tracked in that browser's own localStorage), completely independent of
+ * the account, so two browsers signed into the exact same self-hosted
+ * account and the exact same real calendar can end up showing different
+ * "calendars" — one with sample events seeded, one without — which reads as
+ * the backend being broken when it isn't. Real for a public signup flow
+ * introducing a brand-new user to an empty calendar; pure confusion for a
+ * single-user self-hosted deployment. Re-add it here if this ever serves
+ * more than one real user again.
  */
-export const externalMigrations: ExternalMigration[] = [demoDataSeedMigration];
+export const externalMigrations: ExternalMigration[] = [];
 
 // ─── Migration Runners ───────────────────────────────────────────────────────
 
