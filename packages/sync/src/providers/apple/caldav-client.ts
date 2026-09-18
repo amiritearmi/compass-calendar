@@ -47,7 +47,12 @@ export class CaldavClientError extends Error {
   }
 }
 
-const CALDAV_ORIGIN = "https://caldav.icloud.com";
+// Configurable so this same "Apple" connect flow can point at any CalDAV
+// server (Radicale, Nextcloud, Baikal, ...), not only iCloud — the discovery
+// handshake below (principal -> calendar-home-set -> PROPFIND depth 1) is
+// standard CalDAV (RFC 4791/6764), nothing here actually depends on iCloud
+// specifically. Defaults to iCloud so an unmodified deployment is unaffected.
+const CALDAV_ORIGIN = process.env["CALDAV_ORIGIN"] || "https://caldav.icloud.com";
 const MAX_REDIRECTS = 5;
 
 const XML_PARSER = new XMLParser({
@@ -295,8 +300,28 @@ function assertDiscoveryStatus(status: number): void {
   }
 }
 
+// Every requested prop was blanket-prefixed `d:` (DAV:), including ones that
+// actually live in the CalDAV/CalendarServer/Apple namespaces declared right
+// below. iCloud tolerates the wrong prefix (recognizes the property by local
+// name regardless of namespace) — Radicale does not, and correctly returns
+// nothing for a mis-namespaced property request. Found live 2026-09-18:
+// discovery got a real current-user-principal back from Radicale, then
+// "no calendar-home-set" on the very next PROPFIND, because that request
+// literally asked for `d:calendar-home-set` (DAV:) instead of
+// `cal:calendar-home-set` (urn:ietf:params:xml:ns:caldav). Fixed with an
+// explicit per-property namespace instead of a blanket assumption — every
+// property already requested anywhere in this file is covered.
+const PROP_NAMESPACE: Readonly<Record<string, string>> = {
+  "calendar-home-set": "cal",
+  "supported-calendar-component-set": "cal",
+  "calendar-color": "ical",
+  getctag: "cs",
+};
+
 function buildPropfindBody(props: readonly string[]): string {
-  const propElements = props.map((prop) => `<d:${prop}/>`).join("");
+  const propElements = props
+    .map((prop) => `<${PROP_NAMESPACE[prop] ?? "d"}:${prop}/>`)
+    .join("");
   return `<?xml version="1.0" encoding="utf-8"?>
 <d:propfind xmlns:d="DAV:" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/" xmlns:ical="http://apple.com/ns/ical/">
   <d:prop>${propElements}</d:prop>
