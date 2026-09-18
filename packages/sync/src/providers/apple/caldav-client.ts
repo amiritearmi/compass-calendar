@@ -52,7 +52,13 @@ export class CaldavClientError extends Error {
 // handshake below (principal -> calendar-home-set -> PROPFIND depth 1) is
 // standard CalDAV (RFC 4791/6764), nothing here actually depends on iCloud
 // specifically. Defaults to iCloud so an unmodified deployment is unaffected.
-const CALDAV_ORIGIN = process.env["CALDAV_ORIGIN"] || "https://caldav.icloud.com";
+// Exported as the single source of truth: apple-event-reader.adapter.ts and
+// apple-event-writer.adapter.ts resolve a stored calendar's relative path
+// back to an absolute URL and must use this same origin, not a hardcoded
+// iCloud one, or reads/writes silently target the wrong server after
+// discovery already succeeded against the configured one.
+export const CALDAV_ORIGIN =
+  process.env["CALDAV_ORIGIN"] || "https://caldav.icloud.com";
 const MAX_REDIRECTS = 5;
 
 const XML_PARSER = new XMLParser({

@@ -16,6 +16,7 @@ import {
   parseAppleInstanceId,
 } from "@sync/providers/apple/apple-instance-id";
 import {
+  CALDAV_ORIGIN,
   type CaldavClient,
   type CaldavResponse,
   createCaldavClient,
@@ -43,7 +44,6 @@ import {
 } from "@sync/providers/provider-write-error";
 import { redactedCause } from "@sync/safety/redact-error";
 
-const CALDAV_ORIGIN = "https://caldav.icloud.com";
 const RFC5545 = dayjs.DateFormat.RFC5545;
 const DATE_ONLY = dayjs.DateFormat.YEAR_MONTH_DAY_FORMAT;
 

@@ -4,6 +4,7 @@ import { syncHorizon } from "@sync/domain/horizon";
 import { type AppleCalendarClientFactory } from "@sync/providers/apple/apple-calendar.adapter";
 import { normalizeAppleEventResource } from "@sync/providers/apple/apple-event.normalizer";
 import {
+  CALDAV_ORIGIN,
   type CaldavClient,
   type CaldavResponse,
   createCaldavClient,
@@ -26,7 +27,6 @@ const logger = Logger("sync:apple-event-reader");
 
 export const MULTIGET_BATCH_SIZE = 50;
 export const SYNC_COLLECTION_LIMIT = 100;
-const CALDAV_ORIGIN = "https://caldav.icloud.com";
 
 export interface AppleEventResource {
   readonly href: string;
