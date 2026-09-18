@@ -27,7 +27,7 @@ const VISIBLE_START_MARGIN_MIN = 30;
  * looking at (selected column, focused event, today, or the view anchor). */
 export const createTimedDraft = (
   targetDay: Dayjs,
-  activity: "createShortcut" | "keyboardPlace",
+  activity: "createShortcut" | "keyboardPlace" | "gridClick",
   calendarId: CalendarId | null = null,
 ) => {
   const { startDate, endDate } = getDraftTimes(targetDay);
@@ -43,7 +43,7 @@ export const createTimedDraft = (
 export const startTimedDraftAt = (
   startDate: string,
   endDate: string,
-  activity: "createShortcut" | "keyboardPlace",
+  activity: "createShortcut" | "keyboardPlace" | "gridClick",
   calendarId: CalendarId | null = null,
 ) => {
   // Stable grid identity so place-create can focus the card and Enter can
@@ -82,7 +82,7 @@ export const timedDraftEnd = (start: Dayjs): Dayjs => {
 /** One-day all-day draft on `targetDay`; the caller picks the day. */
 export const createAlldayDraft = (
   targetDay: Dayjs,
-  activity: "createShortcut",
+  activity: "createShortcut" | "gridClick",
   calendarId: CalendarId | null = null,
 ) => {
   const start = targetDay.startOf("day");

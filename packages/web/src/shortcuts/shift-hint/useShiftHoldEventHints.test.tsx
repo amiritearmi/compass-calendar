@@ -5,7 +5,6 @@ import { dispatchMissingKey } from "@web/__tests__/utils/keyboard.test.util";
 import { type GridEvent } from "@web/common/types/web.event.types";
 import { WEEK_INTERACTION_EVENT_ID_ATTRIBUTE } from "@web/grid/interaction/view-event-registry";
 import { clearAppLockReasons, setAppLockReason } from "@web/shortcuts/app-lock";
-import { requestPointerEventJump } from "@web/shortcuts/keyboard-only/pointer-action";
 import { KEYMAP } from "@web/shortcuts/keymap";
 import {
   eventJumpActions,
@@ -22,7 +21,6 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 const EVENT_A = EventIdSchema.parse("aaaaaaaaaaaaaaaaaaaaaaaa");
 const EVENT_B = EventIdSchema.parse("bbbbbbbbbbbbbbbbbbbbbbbb");
 const EVENT_C = EventIdSchema.parse("cccccccccccccccccccccccc");
-const EVENT_D = EventIdSchema.parse("dddddddddddddddddddddddd");
 /** Sunday 2026-08-02 through Saturday 2026-08-08, the week the fixtures use. */
 const WEEK_DAYS = Array.from({ length: 7 }, (_, index) =>
   dayjs("2026-08-02").add(index, "day"),
@@ -486,112 +484,11 @@ describe("useShiftHoldEventHints", () => {
     expect(useEventJumpStore.getState().isActive).toBe(false);
   });
 
-  it("turns a blocked event click into a directly usable event sequence", () => {
-    const { focus, result } = mountHints();
-
-    act(() => {
-      requestPointerEventJump(EVENT_B);
-    });
-
-    expect(useEventJumpStore.getState()).toMatchObject({
-      isActive: true,
-      pointerHintKey: "W2",
-      pointerHintEventId: EVENT_B,
-    });
-    expect(focus).toHaveBeenCalledWith(
-      expect.objectContaining({ eventId: EVENT_B }),
-    );
-    expect(result.current.hints.map((hint) => hint.hint)).toEqual([
-      "w1",
-      "w2",
-      "r1",
-    ]);
-
-    act(() => {
-      dispatch("keydown", "w");
-      dispatch("keydown", "2");
-    });
-
-    expect(focus).toHaveBeenLastCalledWith(
-      expect.objectContaining({ eventId: EVENT_B }),
-    );
-  });
-
-  it("does not steal focus to the first-of-day while typing a clicked event token", () => {
-    const { focus } = mountHints();
-
-    act(() => {
-      requestPointerEventJump(EVENT_B);
-    });
-    focus.mockClear();
-
-    act(() => {
-      dispatch("keydown", "w");
-    });
-
-    expect(focus).not.toHaveBeenCalled();
-    expect(useEventJumpStore.getState().pointerHintEventId).toBe(EVENT_B);
-  });
-
-  it("commits a clicked prefix token without waiting for a longer sibling", () => {
-    const focus = mock((_target: { eventId: string }) => {});
-    const ids = Array.from({ length: 20 }, (_, index) =>
-      EventIdSchema.parse(index.toString(16).padStart(24, "c")),
-    );
-    const clicked = ids[1]!;
-    const elements = ids.map((id) => {
-      const el = document.createElement("button");
-      el.textContent = id;
-      document.body.appendChild(el);
-      return el;
-    });
-    const timedEvents = ids.map((id, index) =>
-      timedFixture(
-        id,
-        `2026-08-05T${String(8 + Math.floor(index / 6)).padStart(2, "0")}:${String((index % 6) * 10).padStart(2, "0")}:00.000Z`,
-      ),
-    );
-
-    renderHook(() =>
-      useShiftHoldEventHints({
-        createAtTime: () => {},
-        focus: (target) => focus(target),
-        getQuickTimeDay: () => dayjs("2026-08-05"),
-        listVisible: () =>
-          ids.map((id, index) => ({
-            eventId: id,
-            eventType: "timed" as const,
-            element: elements[index]!,
-          })),
-        timedEvents,
-        visibleDays: WEEK_DAYS,
-      }),
-    );
-
-    act(() => {
-      requestPointerEventJump(clicked);
-    });
-    expect(useEventJumpStore.getState().pointerHintKey).toBe("W2");
-    focus.mockClear();
-
-    act(() => {
-      dispatch("keydown", "w");
-      dispatch("keydown", "2");
-    });
-
-    expect(focus).toHaveBeenLastCalledWith(
-      expect.objectContaining({ eventId: clicked }),
-    );
-    expect(focus).not.toHaveBeenCalledWith(
-      expect.objectContaining({ eventId: ids[0] }),
-    );
-  });
-
   it("swallows unmatched letters while jump is active", () => {
     mountHints();
 
     act(() => {
-      requestPointerEventJump(EVENT_B);
+      eventJumpActions.setActive(true);
     });
 
     const event = new KeyboardEvent("keydown", {
@@ -613,7 +510,7 @@ describe("useShiftHoldEventHints", () => {
     mountHints();
 
     act(() => {
-      requestPointerEventJump(EVENT_B);
+      eventJumpActions.setActive(true);
     });
     expect(useEventJumpStore.getState().isActive).toBe(true);
 
@@ -638,63 +535,6 @@ describe("useShiftHoldEventHints", () => {
     });
     document.dispatchEvent(afterClear);
     expect(afterClear.defaultPrevented).toBe(false);
-  });
-
-  it("refreshes the pointer hint token when an earlier event appears", () => {
-    const focus = mock((_target: { eventId: string }) => {});
-    const events = [
-      timedFixture(EVENT_A, "2026-08-05T09:00:00.000Z"),
-      timedFixture(EVENT_B, "2026-08-05T11:00:00.000Z"),
-      timedFixture(EVENT_C, "2026-08-06T13:00:00.000Z"),
-    ];
-    const elements = [EVENT_A, EVENT_B, EVENT_C, EVENT_D].map((id) => {
-      const el = document.createElement("button");
-      el.textContent = id;
-      document.body.appendChild(el);
-      return el;
-    });
-
-    const { rerender } = renderHook(
-      ({ timedEvents }) =>
-        useShiftHoldEventHints({
-          createAtTime: () => {},
-          focus: (target) => focus(target),
-          getQuickTimeDay: () => dayjs("2026-08-05"),
-          listVisible: () =>
-            timedEvents.flatMap((event) => {
-              const index = [EVENT_A, EVENT_B, EVENT_C, EVENT_D].indexOf(
-                event._id as typeof EVENT_A,
-              );
-              if (index < 0) return [];
-              return [
-                {
-                  eventId: event._id as string,
-                  eventType: "timed" as const,
-                  element: elements[index]!,
-                },
-              ];
-            }),
-          timedEvents,
-          visibleDays: WEEK_DAYS,
-        }),
-      { initialProps: { timedEvents: events } },
-    );
-
-    act(() => {
-      requestPointerEventJump(EVENT_B);
-    });
-    expect(useEventJumpStore.getState().pointerHintKey).toBe("W2");
-
-    act(() => {
-      rerender({
-        timedEvents: [
-          timedFixture(EVENT_D, "2026-08-05T08:00:00.000Z"),
-          ...events,
-        ],
-      });
-    });
-
-    expect(useEventJumpStore.getState().pointerHintKey).toBe("W3");
   });
 
   it("publishes every visible column as a day key can select empty ones", () => {

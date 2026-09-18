@@ -1,15 +1,24 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
+import { type PropsWithChildren } from "react";
+import { type Calendar, getCalendarCapabilities } from "@core/types/calendar.contracts";
+import { CalendarIdSchema, EventIdSchema } from "@core/types/domain-primitives";
+import { calendarQueryKeys } from "@web/calendars/calendar.query";
 import {
   DATA_TIMED_GRID_ROW,
   ID_GRID_COLUMNS_TIMED,
   ID_GRID_MAIN,
 } from "@web/common/constants/web.constants";
+import { createObjectIdString } from "@web/common/utils/id/object-id.util";
+import {
+  initialDraftState,
+  selectGridDraft,
+  useDraftStore,
+} from "@web/events/stores/draft.store";
 import {
   eventPointerActionAttributes,
   POINTER_ACTION_ATTRIBUTE,
   POINTER_ACTIONS,
-  POINTER_EVENT_JUMP_REQUEST,
-  POINTER_GRID_CREATE_REQUEST,
   pointerPassAttributes,
   pointerShortcutAttributes,
 } from "@web/shortcuts/keyboard-only/pointer-action";
@@ -28,6 +37,37 @@ import {
   useEventJumpStore,
 } from "@web/shortcuts/shift-hint/event-jump.store";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+
+/** A single writable local calendar — enough for `usePointerHintTracker`'s
+ * `useCalendarsQuery`/`useDefaultTargetCalendar`/`useConnectedAccounts` calls
+ * to resolve a default target instead of racing a fetch. */
+const writableCalendar: Calendar = {
+  id: CalendarIdSchema.parse(createObjectIdString()),
+  name: "Primary calendar",
+  description: "",
+  timeZone: null,
+  foregroundColor: "#000000",
+  backgroundColor: "#4285f4",
+  provider: "local",
+  access: "owner",
+  capabilities: getCalendarCapabilities("owner"),
+  isPrimary: true,
+  isVisible: true,
+  isActive: true,
+};
+
+const renderTracker = (enabled?: boolean) => {
+  const queryClient = new QueryClient();
+  queryClient.setQueryData(calendarQueryKeys.all, [writableCalendar]);
+  function wrapper({ children }: PropsWithChildren) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        {children}
+      </QueryClientProvider>
+    );
+  }
+  return renderHook(() => usePointerHintTracker(enabled), { wrapper });
+};
 
 const mounted: HTMLElement[] = [];
 const mount = <T extends HTMLElement>(element: T): T => {
@@ -73,6 +113,7 @@ describe("usePointerHintTracker", () => {
     resetPointerHintPersistenceForTests();
     usePointerHintStore.setState(initialPointerHintState, true);
     useEventJumpStore.setState(initialEventJumpState, true);
+    useDraftStore.setState(initialDraftState, true);
   });
 
   afterEach(() => {
@@ -83,29 +124,35 @@ describe("usePointerHintTracker", () => {
     resetPointerHintPersistenceForTests();
     usePointerHintStore.setState(initialPointerHintState, true);
     useEventJumpStore.setState(initialEventJumpState, true);
+    useDraftStore.setState(initialDraftState, true);
   });
 
-  it("teaches an event card click and asks jump mode to focus that event", () => {
-    const jumpRequests = listenFor(POINTER_EVENT_JUMP_REQUEST);
+  it("opens the clicked event directly instead of arming jump mode", () => {
+    const eventId = EventIdSchema.parse(createObjectIdString());
     const card = mount(document.createElement("div"));
     card.setAttribute("role", "button");
     for (const [name, value] of Object.entries(
-      eventPointerActionAttributes("event-1"),
+      eventPointerActionAttributes(eventId),
     )) {
       card.setAttribute(name, value);
     }
-    const { unmount } = renderHook(() => usePointerHintTracker());
+    const { unmount } = renderTracker();
 
     const event = press(card);
 
     expect(event.defaultPrevented).toBe(false);
+    // The teaching pulse still fires — clicking still shows the shortcut for
+    // next time, it just no longer needs it to actually open the event.
     expect(pulseCount()).toBe(1);
     expect(latestAttempt()).toEqual({
       actionId: POINTER_ACTIONS.eventOpen,
-      eventId: "event-1",
+      eventId,
       performed: false,
     });
-    expect(jumpRequests.count()).toBe(1);
+    // No cache entry for this id, so openSavedEventById no-ops — the point of
+    // this test is that jump mode is never armed either way.
+    expect(useEventJumpStore.getState().isActive).toBe(false);
+    expect(useEventJumpStore.getState().pointerHintEventId).toBe(null);
     unmount();
   });
 
@@ -116,7 +163,7 @@ describe("usePointerHintTracker", () => {
     )) {
       button.setAttribute(name, value);
     }
-    const { unmount } = renderHook(() => usePointerHintTracker());
+    const { unmount } = renderTracker();
 
     press(button);
 
@@ -131,7 +178,7 @@ describe("usePointerHintTracker", () => {
   it("derives keys for an annotated working button without a shortcut", () => {
     const button = mount(document.createElement("button"));
     button.setAttribute(POINTER_ACTION_ATTRIBUTE, POINTER_ACTIONS.goToToday);
-    const { unmount } = renderHook(() => usePointerHintTracker());
+    const { unmount } = renderTracker();
 
     press(button);
 
@@ -145,7 +192,7 @@ describe("usePointerHintTracker", () => {
 
   it("stays silent for working buttons with nothing to teach", () => {
     const button = mount(document.createElement("button"));
-    const { unmount } = renderHook(() => usePointerHintTracker());
+    const { unmount } = renderTracker();
 
     press(button);
 
@@ -163,7 +210,7 @@ describe("usePointerHintTracker", () => {
     const passCard = document.createElement("div");
     passCard.setAttribute("role", "button");
     passRoot.appendChild(passCard);
-    const { unmount } = renderHook(() => usePointerHintTracker());
+    const { unmount } = renderTracker();
 
     press(whitespace);
     press(input);
@@ -176,7 +223,7 @@ describe("usePointerHintTracker", () => {
   it("gives an unannotated clickable-looking element the generic fallback", () => {
     const card = mount(document.createElement("div"));
     card.setAttribute("role", "button");
-    const { unmount } = renderHook(() => usePointerHintTracker());
+    const { unmount } = renderTracker();
 
     press(card);
 
@@ -187,7 +234,7 @@ describe("usePointerHintTracker", () => {
   it("ignores right clicks and touch", () => {
     const card = mount(document.createElement("div"));
     card.setAttribute("role", "button");
-    const { unmount } = renderHook(() => usePointerHintTracker());
+    const { unmount } = renderTracker();
 
     press(card, { button: 2 });
     press(card, { pointerType: "touch" });
@@ -196,27 +243,26 @@ describe("usePointerHintTracker", () => {
     unmount();
   });
 
-  it("keeps arming the taught path after tips are turned off", () => {
+  it("keeps opening the event directly after tips are turned off", () => {
     writePointerHintDismissedPermanently();
-    const jumpRequests = listenFor(POINTER_EVENT_JUMP_REQUEST);
+    const eventId = EventIdSchema.parse(createObjectIdString());
     const card = mount(document.createElement("div"));
     card.setAttribute("role", "button");
     for (const [name, value] of Object.entries(
-      eventPointerActionAttributes("event-1"),
+      eventPointerActionAttributes(eventId),
     )) {
       card.setAttribute(name, value);
     }
-    const { unmount } = renderHook(() => usePointerHintTracker());
+    const { unmount } = renderTracker();
 
     press(card);
 
     expect(pulseCount()).toBe(0);
-    expect(jumpRequests.count()).toBe(1);
+    expect(useEventJumpStore.getState().isActive).toBe(false);
     unmount();
   });
 
-  it("teaches the clicked quarter-hour on an empty timed-grid slot", () => {
-    const gridRequests = listenFor(POINTER_GRID_CREATE_REQUEST);
+  it("creates and opens a timed draft on an empty timed-grid slot", () => {
     const grid = mount(document.createElement("div"));
     grid.id = ID_GRID_MAIN;
     Object.defineProperty(grid, "scrollHeight", { value: 1440 });
@@ -233,7 +279,7 @@ describe("usePointerHintTracker", () => {
     hourRow.setAttribute(DATA_TIMED_GRID_ROW, "true");
     grid.append(columns, hourRow);
     eventJumpActions.setActive(true);
-    const { unmount } = renderHook(() => usePointerHintTracker());
+    const { unmount } = renderTracker();
 
     press(hourRow);
 
@@ -243,15 +289,19 @@ describe("usePointerHintTracker", () => {
       gridTimeKey: "1130",
       performed: false,
     });
-    expect(gridRequests.count()).toBe(1);
     expect(useEventJumpStore.getState().isActive).toBe(false);
+    const draft = selectGridDraft(useDraftStore.getState());
+    expect(draft?.values.schedule.kind).toBe("timed");
+    expect(draft?.values.calendarId).toBe(writableCalendar.id);
+    expect(useDraftStore.getState().status?.activity).toBe("gridClick");
+    expect(useDraftStore.getState().status?.isFormOpen).toBe(true);
     unmount();
   });
 
   it("does nothing while disabled", () => {
     const card = mount(document.createElement("div"));
     card.setAttribute("role", "button");
-    const { unmount } = renderHook(() => usePointerHintTracker(false));
+    const { unmount } = renderTracker(false);
 
     press(card);
 

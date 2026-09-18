@@ -18,12 +18,6 @@ import {
   keyboardKey,
   normalizedKeyboardKey,
 } from "@web/shortcuts/is-bare-letter-key";
-import {
-  POINTER_EVENT_JUMP_REQUEST,
-  POINTER_GRID_CREATE_REQUEST,
-  pointerEventJumpId,
-  pointerGridIntent,
-} from "@web/shortcuts/keyboard-only/pointer-action";
 import { KEYMAP } from "@web/shortcuts/keymap";
 import {
   canQuickTimeBufferGrow,
@@ -720,46 +714,9 @@ export function useShiftHoldEventHints({
       if (isActiveRef.current) deactivate();
     };
 
-    const onPointerEventJumpRequest = (event: Event) => {
-      if (isAppLocked()) return;
-      const eventId = pointerEventJumpId(event);
-      if (!eventId) return;
-      const assignments = rebuildAssignments();
-      const assignment = assignments.find((item) => item.eventId === eventId);
-      if (!assignment) return;
-
-      isActiveRef.current = true;
-      bufferRef.current = "";
-      eventJumpActions.setActive(true);
-      eventJumpActions.setActiveDayKeys([assignment.dayKey]);
-      eventJumpActions.setPointerHint({
-        eventId: assignment.eventId,
-        key: assignment.hint.toUpperCase(),
-      });
-      setHints(toActiveHints(assignments, visibleByIdRef.current));
-      // Focus now so the advertised Enter path works, including when this
-      // token is a prefix of a longer sibling (W2 vs W20) that would otherwise
-      // wait 400ms before focusing.
-      focusEvent(eventId);
-    };
-
-    const onPointerGridCreateRequest = (event: Event) => {
-      const intent = pointerGridIntent(event);
-      if (!intent) return;
-      eventJumpActions.setPointerDraftIntent(intent);
-    };
-
     document.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("keyup", onKeyUp, true);
     window.addEventListener("blur", onBlur);
-    document.addEventListener(
-      POINTER_EVENT_JUMP_REQUEST,
-      onPointerEventJumpRequest,
-    );
-    document.addEventListener(
-      POINTER_GRID_CREATE_REQUEST,
-      onPointerGridCreateRequest,
-    );
 
     return () => {
       clearAmbiguousCommitTimer();
@@ -768,14 +725,6 @@ export function useShiftHoldEventHints({
       document.removeEventListener("keydown", onKeyDown, true);
       document.removeEventListener("keyup", onKeyUp, true);
       window.removeEventListener("blur", onBlur);
-      document.removeEventListener(
-        POINTER_EVENT_JUMP_REQUEST,
-        onPointerEventJumpRequest,
-      );
-      document.removeEventListener(
-        POINTER_GRID_CREATE_REQUEST,
-        onPointerGridCreateRequest,
-      );
       eventJumpActions.setPointerDraftIntent(null);
       if (isActiveRef.current) {
         eventJumpActions.reset();

@@ -1,18 +1,32 @@
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
+import { type CalendarId, CalendarIdSchema } from "@core/types/domain-primitives";
+import dayjs from "@core/util/date/dayjs";
+import { useCalendarsQuery } from "@web/calendars/calendar.query";
+import { getWritableCalendars } from "@web/calendars/calendar.util";
+import {
+  useConnectedAccounts,
+  useDefaultTargetCalendar,
+} from "@web/calendars/useDefaultTargetCalendar";
 import { track } from "@web/auth/posthog/track";
+import {
+  createAlldayDraft,
+  startTimedDraftAt,
+  timedDraftEnd,
+} from "@web/common/utils/draft/draft.util";
+import { openSavedEventById } from "@web/common/utils/draft/open-event.util";
 import {
   type BlockedPointerAttempt,
   POINTER_PASS_ATTRIBUTE,
   pointerActionKeys,
   pointerGridIntentFromPointer,
-  requestPointerEventJump,
-  requestPointerGridCreate,
   teachingFromBlockedPointer,
 } from "@web/shortcuts/keyboard-only/pointer-action";
 import { readPointerHintDismissedPermanently } from "@web/shortcuts/keyboard-only/pointer-hint.storage";
 import { pointerHintActions } from "@web/shortcuts/keyboard-only/pointer-hint.store";
 import { eventJumpActions } from "@web/shortcuts/shift-hint/event-jump.store";
 import { viewFromPathname } from "@web/shortcuts/tips/shortcut-telemetry";
+import { CALENDAR_COLUMN_ID_ATTRIBUTE } from "@web/views/Day/components/Calendar/dayCalendarColumnFocus.util";
 
 const PRIMARY_BUTTON = 0;
 
@@ -99,18 +113,65 @@ const shortcutKeyLabel = (attempt: BlockedPointerAttempt): string => {
   return "";
 };
 
+/** Everything the pointerdown listener needs that can change between renders
+ * but is read from inside a `useEffect(..., [])` closure registered once. */
+interface PointerActionLiveState {
+  queryClient: QueryClient;
+  defaultTargetCalendarId: CalendarId | null;
+  writableCalendarIds: ReadonlySet<string>;
+}
+
+/** Day view stamps `data-calendar-column-id` on each calendar's column; Week
+ * has no such attribute, so this naturally falls through to the default
+ * target calendar there, matching `resolveShortcutCalendarId` in
+ * `DayCalendarGrid.tsx` but resolved from the clicked element instead of
+ * `document.activeElement`. */
+const calendarIdForClickTarget = (
+  target: Element | null,
+  live: PointerActionLiveState,
+): CalendarId | null => {
+  const columnId = target
+    ?.closest(`[${CALENDAR_COLUMN_ID_ATTRIBUTE}]`)
+    ?.getAttribute(CALENDAR_COLUMN_ID_ATTRIBUTE);
+  if (columnId && live.writableCalendarIds.has(columnId)) {
+    const parsed = CalendarIdSchema.safeParse(columnId);
+    if (parsed.success) return parsed.data;
+  }
+  return live.defaultTargetCalendarId;
+};
+
 /**
- * Teaches the keyboard on every click without blocking the click. A click on
- * a dead target (event card, empty grid slot, annotated chrome) shows the
- * exact keyboard path and arms it: the clicked event is focused so its jump
- * letter plus Enter opens it, and a clicked grid slot becomes the target for
- * typed time digits. A click on a working control that carries a shortcut
- * performs the action and shows the key for next time. Text selection and
- * copy buttons are untouched. Mounted once in RootShell for calendar views.
+ * A click on a working control that carries a shortcut still performs the
+ * action and shows the key for next time (teaching-only, unchanged). A click
+ * on an event card or an empty grid slot no longer just teaches the shortcut:
+ * it opens the event or creates a draft directly, via the same functions the
+ * right-click menu and the "C" / "Shift+C" / Enter keyboard paths already
+ * call (see `open-event.util.ts`, `draft.util.ts`) — the taught key still
+ * shows so keyboard use stays discoverable. Text selection and copy buttons
+ * are untouched. Mounted once in RootShell for calendar views.
  */
 export function usePointerHintTracker(enabled = true) {
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
+
+  const queryClient = useQueryClient();
+  const { data: calendars = [] } = useCalendarsQuery();
+  const defaultTargetCalendarId = useDefaultTargetCalendar(calendars)?.id ?? null;
+  const connectedAccounts = useConnectedAccounts();
+  const liveRef = useRef<PointerActionLiveState>({
+    queryClient,
+    defaultTargetCalendarId,
+    writableCalendarIds: new Set(),
+  });
+  liveRef.current = {
+    queryClient,
+    defaultTargetCalendarId,
+    writableCalendarIds: new Set(
+      getWritableCalendars(calendars, {
+        hasConnectedAccount: connectedAccounts.length > 0,
+      }).map((calendar) => calendar.id),
+    ),
+  };
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
@@ -133,16 +194,32 @@ export function usePointerHintTracker(enabled = true) {
         });
       }
 
-      // The taught path must work immediately, tips on or off.
+      // A click now performs the action directly instead of arming a
+      // keyboard shortcut for it — see open-event.util.ts and draft.util.ts
+      // for the same direct-action functions the right-click menu and "C" /
+      // "Shift+C" keyboard shortcuts already use.
       if (gridIntent) {
         eventJumpActions.setActive(false);
-        requestPointerGridCreate(gridIntent);
+        const calendarId = calendarIdForClickTarget(
+          closestElement(event.target),
+          liveRef.current,
+        );
+        if (gridIntent.kind === "all-day") {
+          createAlldayDraft(dayjs(gridIntent.date), "gridClick", calendarId);
+        } else if (gridIntent.start) {
+          const start = dayjs(gridIntent.start);
+          startTimedDraftAt(
+            start.format(),
+            timedDraftEnd(start).format(),
+            "gridClick",
+            calendarId,
+          );
+        }
         return;
       }
       if (jumpEventId) {
-        // Never let a prior event's assignment flash for a new/locked target.
-        eventJumpActions.setPointerHint(null);
-        requestPointerEventJump(jumpEventId);
+        eventJumpActions.setActive(false);
+        openSavedEventById(jumpEventId, liveRef.current.queryClient);
         return;
       }
       // Jump mode swallows unmatched printable keys, including `]`.
