@@ -45,6 +45,10 @@ export const startTimedDraftAt = (
   endDate: string,
   activity: "createShortcut" | "keyboardPlace" | "gridClick",
   calendarId: CalendarId | null = null,
+  /** Overrides the activity's default form-open behavior — a drag-to-set-span
+   * gesture seeds the draft immediately (for the live ghost) but keeps the
+   * form closed until the drag ends. Omitted keeps today's default. */
+  openForm?: boolean,
 ) => {
   // Stable grid identity so place-create can focus the card and Enter can
   // open the live draft without reseeding.
@@ -55,7 +59,7 @@ export const startTimedDraftAt = (
     calendarId,
   );
 
-  draftActions.startGridDraft({ activity, draft });
+  draftActions.startGridDraft({ activity, draft, openForm });
 
   // Place-create keeps the form closed; focus the draft card so further
   // Shift+Arrow / Enter operate on the grid event rather than the title.
@@ -84,6 +88,8 @@ export const createAlldayDraft = (
   targetDay: Dayjs,
   activity: "createShortcut" | "gridClick",
   calendarId: CalendarId | null = null,
+  endDay: Dayjs = targetDay,
+  openForm?: boolean,
 ) => {
   const start = targetDay.startOf("day");
   // Same stable identity as timed shortcut drafts so save can reuse it as
@@ -93,13 +99,13 @@ export const createAlldayDraft = (
     {
       kind: "allDay",
       start: start.toDate(),
-      end: start.add(1, "day").toDate(),
+      end: endDay.startOf("day").add(1, "day").toDate(),
     },
     clientId,
     calendarId,
   );
 
-  draftActions.startGridDraft({ activity, draft });
+  draftActions.startGridDraft({ activity, draft, openForm });
 };
 
 export const getDraftTimes = (targetDay: Dayjs) => {

@@ -258,7 +258,9 @@ const gridKindFromElement = (
   if (target.hasAttribute(DATA_TIMED_GRID_ROW)) return "timed";
 };
 
-const gridDateFromColumns = (
+/** Exported so a pointer drag can re-resolve the day column under the
+ * pointer on every move, the same way a fresh click resolves it once. */
+export const gridDateFromColumns = (
   kind: PointerGridIntent["kind"],
   clientX: number,
 ): string | undefined => {
@@ -283,10 +285,23 @@ const gridDateFromColumns = (
   );
 };
 
-const timedIntentAt = (
-  date: string,
+export interface SnappedGridMinute {
+  hour: number;
+  minutes: number;
+  timeKey: string;
+  timeLabel: string;
+}
+
+/**
+ * The pixel-to-time math `timedIntentAt` uses for a fresh click, extracted so
+ * a pointer drag (dragging out a duration on create, or dragging an existing
+ * event) can re-snap on every `pointermove` against the same grid element
+ * without re-walking the clicked element's DOM path each time — the day
+ * column stays fixed for the duration of a same-day drag.
+ */
+export const snappedGridMinuteAtY = (
   clientY: number,
-): PointerGridIntent | null => {
+): SnappedGridMinute | null => {
   const grid = document.getElementById(ID_GRID_MAIN);
   if (!grid) return null;
   const rect = grid.getBoundingClientRect();
@@ -300,15 +315,31 @@ const timedIntentAt = (
   const minutes = minute % 60;
   const hh = String(hour).padStart(2, "0");
   const mm = String(minutes).padStart(2, "0");
-  const timeKey = `${hh}${mm}`;
   const timeLabel = new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(2000, 0, 1, hour, minutes));
+  return { hour, minutes, timeKey: `${hh}${mm}`, timeLabel };
+};
+
+const timedIntentAt = (
+  date: string,
+  clientY: number,
+): PointerGridIntent | null => {
+  const snapped = snappedGridMinuteAtY(clientY);
+  if (!snapped) return null;
+  const hh = String(snapped.hour).padStart(2, "0");
+  const mm = String(snapped.minutes).padStart(2, "0");
   const start = dayjs
     .tz(`${date}T${hh}:${mm}`, getEffectiveTimeZone())
     .format();
-  return { date, kind: "timed", start, timeKey, timeLabel };
+  return {
+    date,
+    kind: "timed",
+    start,
+    timeKey: snapped.timeKey,
+    timeLabel: snapped.timeLabel,
+  };
 };
 
 export const pointerGridIntentFromPointer = (

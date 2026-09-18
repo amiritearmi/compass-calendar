@@ -67,9 +67,14 @@ export const draftActions = {
   startGridDraft: ({
     activity,
     draft,
+    openForm,
   }: {
     activity: Activity_DraftEvent;
     draft: GridEventDraft;
+    /** Overrides the activity's default form-open behavior — a pointer drag
+     * seeds the draft immediately (for the live ghost) but keeps the form
+     * closed until the drag ends. Omitted keeps today's per-activity default. */
+    openForm?: boolean;
   }) =>
     useDraftStore.setState(
       (state) => ({
@@ -82,7 +87,7 @@ export const draftActions = {
               ? Categories_Event.ALLDAY
               : Categories_Event.TIMED,
           isDrafting: true,
-          isFormOpen: OPENS_FORM_ON_START.has(activity),
+          isFormOpen: openForm ?? OPENS_FORM_ON_START.has(activity),
         },
       }),
       false,

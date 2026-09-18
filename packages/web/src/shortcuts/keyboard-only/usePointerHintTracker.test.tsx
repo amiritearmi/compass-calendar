@@ -94,6 +94,26 @@ const press = (
   return event;
 };
 
+/** Completes a click (as opposed to a drag) on an empty grid slot: a
+ * `beginGridClickOrDrag` session only acts on `pointerup`, listened for on
+ * `window`, so a bare `press()` alone leaves it pending. Same default
+ * coordinates as `press()` — no movement, so it stays under the drag
+ * threshold. */
+const release = (init: Partial<PointerEventInit> = {}) => {
+  act(() => {
+    window.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        button: 0,
+        clientX: 100,
+        clientY: 690,
+        pointerType: "mouse",
+        ...init,
+      }),
+    );
+  });
+};
+
 const listenFor = (type: string): { count: () => number } => {
   let count = 0;
   const onEvent = () => {
@@ -282,6 +302,7 @@ describe("usePointerHintTracker", () => {
     const { unmount } = renderTracker();
 
     press(hourRow);
+    release();
 
     expect(latestAttempt()).toMatchObject({
       actionId: "grid.timed",
@@ -294,6 +315,50 @@ describe("usePointerHintTracker", () => {
     expect(draft?.values.schedule.kind).toBe("timed");
     expect(draft?.values.calendarId).toBe(writableCalendar.id);
     expect(useDraftStore.getState().status?.activity).toBe("gridClick");
+    expect(useDraftStore.getState().status?.isFormOpen).toBe(true);
+    unmount();
+  });
+
+  it("drags out a timed draft's span instead of creating the fixed default", () => {
+    const grid = mount(document.createElement("div"));
+    grid.id = ID_GRID_MAIN;
+    Object.defineProperty(grid, "scrollHeight", { value: 1440 });
+    grid.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 250, bottom: 400 }) as DOMRect;
+    const columns = document.createElement("div");
+    columns.id = ID_GRID_COLUMNS_TIMED;
+    const column = document.createElement("div");
+    column.dataset.gridDate = "2026-08-29";
+    column.getBoundingClientRect = () =>
+      ({ top: 0, left: 50, right: 250, bottom: 1440 }) as DOMRect;
+    columns.appendChild(column);
+    const hourRow = document.createElement("div");
+    hourRow.setAttribute(DATA_TIMED_GRID_ROW, "true");
+    grid.append(columns, hourRow);
+    const { unmount } = renderTracker();
+
+    press(hourRow);
+    // Past the 4px threshold, and far enough down to snap to a different
+    // quarter-hour (scrollHeight 1440 -> 1px per minute).
+    act(() => {
+      window.dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          clientX: 100,
+          clientY: 720,
+        }),
+      );
+    });
+    release({ clientY: 720 });
+
+    const draft = selectGridDraft(useDraftStore.getState());
+    expect(draft?.values.schedule.kind).toBe("timed");
+    const schedule = draft?.values.schedule;
+    if (schedule?.kind === "timed") {
+      // Anchor snapped to 11:30 (see the click-only test above); dragging to
+      // clientY 720 snaps to 12:00 — the later of the two becomes the end.
+      expect(schedule.end.getTime()).toBeGreaterThan(schedule.start.getTime());
+    }
     expect(useDraftStore.getState().status?.isFormOpen).toBe(true);
     unmount();
   });
